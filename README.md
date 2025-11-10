@@ -1,3 +1,3 @@
-# MiliOS
+# Kasumi
 
-**What is MiliOS?** To put it simply, it's AurealOS reborn
+**What is Kasumi?** To put it simply, it's AurealOS reborn
