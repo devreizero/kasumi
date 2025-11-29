@@ -1,3 +1,4 @@
+OUTPUT_FORMAT(@TARGET_OUTPUT_FORMAT@)
 ENTRY(kboot)
 
 /* Generic linker script template */

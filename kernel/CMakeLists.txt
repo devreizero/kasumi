@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
+set(CMAKE_C_COMPILER "clang")
+set(CMAKE_CXX_COMPILER "clang++")
 project(KasumiKernel LANGUAGES C)
 
 # ============================================================
@@ -36,6 +38,7 @@ if(ARCH STREQUAL "x64")
     set(ARCH_DIR "x86")
     set(CMAKE_SYSTEM_PROCESSOR "x86_64")
     set(ARCH_FLAGS "-m64")
+    set(TARGET_OUTPUT_FORMAT "elf64-x86-64")
 elseif(ARCH STREQUAL "arm64")
     set(ARCH_DIR "arm64")
     set(CMAKE_SYSTEM_PROCESSOR "aarch64")
@@ -116,7 +119,7 @@ configure_file(
 # Compiler Flags
 # ============================================================
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -fno-stack-protector -nostdlib -fno-pic ${ARCH_FLAGS} -Wall -Wextra -O2")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -fno-stack-protector -nostdlib -fno-pic -fno-pie ${ARCH_FLAGS} -Wall -Wextra -O2")
 
 # ============================================================
 # Source Discovery
@@ -142,8 +145,13 @@ target_include_directories(${TARGET_NAME} PRIVATE
     include/protocol
 )
 
-set_target_properties(${TARGET_NAME} PROPERTIES
-    LINK_FLAGS "-T${CMAKE_BINARY_DIR}/linker.ld"
+target_link_options(${TARGET_NAME} PRIVATE
+    "-T${CMAKE_BINARY_DIR}/linker.ld"
+    "-ffreestanding"
+    "-fno-pic"
+    "-fno-pie"
+    "-nostdlib"
+    "-no-pie"
 )
 
 # ============================================================

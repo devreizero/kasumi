@@ -14,3 +14,4 @@ Makefile
 ##### Project Temps
 compile_commands.json
 build
+run
