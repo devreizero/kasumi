@@ -1,0 +1,13 @@
+###### Build Tools
+# CMake
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
+build
+
+# Ninja
+build.ninja
+.ninja*
+
+# Makefile
+Makefile
