@@ -19,6 +19,8 @@ if (NOT BOOTLOADER IN_LIST SUPPORTED_BOOTLOADERS)
     message(FATAL_ERROR "Unsupported BOOTLOADER: ${BOOTLOADER}. Supported: ${SUPPORTED_BOOTLOADERS}")
 endif()
 
+set(TARGET_NAME "build-kernel-${ARCH}-${BOOTLOADER}")
+
 # ============================================================
 # Output directory
 # ============================================================
@@ -70,6 +72,8 @@ endif()
 # ------------------------------------------------------------
 
 if(BOOTLOADER STREQUAL "limine")
+
+set(LOAD_ADDRESS "0xffffffff80000000")
 
 set(PROTOCOL_PREAMBLE [[
 /* Define the program headers we want so the bootloader gives us the right */
@@ -130,14 +134,16 @@ file(GLOB_RECURSE KERNEL_SOURCES
 # Target Definition
 # ============================================================
 
-set(TARGET_NAME "build-kernel-${ARCH}-${BOOTLOADER}")
-
 add_executable(${TARGET_NAME} ${KERNEL_SOURCES})
 
 target_include_directories(${TARGET_NAME} PRIVATE
     include/common
-    include/arch/${ARCH_DIR}
-    include/protocol/${PROT_DIR}
+    include/arch
+    include/protocol
+)
+
+set_target_properties(${TARGET_NAME} PROPERTIES
+    LINK_FLAGS "-T${CMAKE_BINARY_DIR}/linker.ld"
 )
 
 # ============================================================

@@ -3,7 +3,6 @@
 CMakeFiles
 CMakeCache.txt
 cmake_install.cmake
-build
 
 # Ninja
 build.ninja
@@ -11,3 +10,7 @@ build.ninja
 
 # Makefile
 Makefile
+
+##### Project Temps
+compile_commands.json
+build
