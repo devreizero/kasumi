@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 set(CMAKE_C_COMPILER "clang")
 set(CMAKE_CXX_COMPILER "clang++")
+set(CMAKE_LINKER ld.lld)
 project(KasumiKernel LANGUAGES C)
 
 # ============================================================
@@ -62,12 +63,15 @@ set(PROT_DIR "${BOOTLOADER}")
 if(ARCH STREQUAL "x64")
     set(LOAD_ADDRESS "0x100000")
     set(ENTRY_SYMBOL "kmain")
+    add_definitions(-DARCH_64)
 elseif(ARCH STREQUAL "arm64")
     set(LOAD_ADDRESS "0x80000")
     set(ENTRY_SYMBOL "kmain")
+    add_definitions(-DARCH_64)
 elseif(ARCH STREQUAL "arm32")
     set(LOAD_ADDRESS "0x8000")
     set(ENTRY_SYMBOL "kmain")
+    add_definitions(-DARCH_32)
 endif()
 
 # ------------------------------------------------------------
@@ -92,20 +96,22 @@ PHDRS
 ]])
 
 set(PROTOCOL_EARLY_SECTIONS [[
-/* Define a section to contain the Limine requests and assign it to its own PHDR */
-.limine_requests : {
-    KEEP(*(.limine_requests_start))
-    KEEP(*(.limine_requests))
-    KEEP(*(.limine_requests_end))
-} :limine_requests
+    /* Define a section to contain the Limine requests and assign it to its own PHDR */
+    .limine_requests : {
+        KEEP(*(.limine_requests_start))
+        KEEP(*(.limine_requests))
+        KEEP(*(.limine_requests_end))
+    } :limine_requests
+
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
 ]])
 
 elseif(BOOTLOADER STREQUAL "grub2")
 
 set(PROTOCOL_FINAL_SECTIONS [[
-.multiboot : {
-    KEEP(*(.multiboot*))
-}
+    .multiboot : {
+        KEEP(*(.multiboot*))
+    }
 ]])
 
 endif()
@@ -116,42 +122,63 @@ configure_file(
 )
 
 # ============================================================
-# Compiler Flags
-# ============================================================
-
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -fno-stack-protector -nostdlib -fno-pic -fno-pie ${ARCH_FLAGS} -Wall -Wextra -O2")
-
-# ============================================================
 # Source Discovery
 # ============================================================
 
 file(GLOB_RECURSE KERNEL_SOURCES
     src/common/*.c
+    src/common/**/*.c
+    src/libc/*.c
+    src/libc/*.S
     src/arch/${ARCH_DIR}/*.c
     src/arch/${ARCH_DIR}/*.S
+    src/arch/${ARCH_DIR}/**/*.c
+    src/arch/${ARCH_DIR}/**/*.S
     src/protocol/${PROT_DIR}/*.c
     src/protocol/${PROT_DIR}/*.S
+    src/protocol/${PROT_DIR}/**/*.c
+    src/protocol/${PROT_DIR}/**/*.S
+)
+
+add_executable(${TARGET_NAME} ${KERNEL_SOURCES})
+
+# ============================================================
+# Compiler Flags
+# ============================================================
+
+target_compile_options(${TARGET_NAME} PRIVATE
+    -ffreestanding
+    -fno-stack-protector
+    -fno-pic
+    -fno-pie
+    -O0
+    -nostdlib
+    -nostdinc
+    -Wall
+    -Wextra
+    -mcmodel=kernel
+    ${ARCH_FLAGS}
 )
 
 # ============================================================
 # Target Definition
 # ============================================================
 
-add_executable(${TARGET_NAME} ${KERNEL_SOURCES})
-
 target_include_directories(${TARGET_NAME} PRIVATE
     include/common
     include/arch
     include/protocol
+    include/libc
 )
 
 target_link_options(${TARGET_NAME} PRIVATE
     "-T${CMAKE_BINARY_DIR}/linker.ld"
-    "-ffreestanding"
-    "-fno-pic"
-    "-fno-pie"
-    "-nostdlib"
-    "-no-pie"
+    -ffreestanding
+    -fno-pic
+    -fno-pie
+    -mcmodel=kernel
+    -nostdlib
+    -static
 )
 
 # ============================================================
@@ -161,6 +188,10 @@ target_link_options(${TARGET_NAME} PRIVATE
 set_target_properties(${TARGET_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     OUTPUT_NAME ${TARGET_NAME}
+)
+set_target_properties(${TARGET_NAME} PROPERTIES
+    LINKER_LANGUAGE C
+    LINK_COMMAND "${CMAKE_LINKER} <LINK_FLAGS> <OBJECTS> -o <TARGET>"
 )
 
 message(STATUS "Kernel build target: ${TARGET_NAME}")

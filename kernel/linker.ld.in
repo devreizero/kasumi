@@ -8,18 +8,24 @@ ENTRY(kboot)
 SECTIONS {
     . = @LOAD_ADDRESS@;
 
-    @PROTOCOL_EARLY_SECTIONS@
+@PROTOCOL_EARLY_SECTIONS@
 
-    .text : ALIGN(4096) {
+    .text.boot : {
+        *(.text.boot)
+    } :text
+
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
+
+    .text : {
         *(.text*)
     } :text
 
-    @PROTOCOL_TEXT_SECTIONS@
+@PROTOCOL_TEXT_SECTIONS@
 
     /* Move to the next memory page for .rodata */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    .rodata : ALIGN(4096) {
+    .rodata : {
         *(.rodata*)
     } :rodata
 
@@ -29,16 +35,22 @@ SECTIONS {
         *(.note.gnu.build-id)
     } :rodata
 
-    @PROTOCOL_RODATA_SECTIONS@
+@PROTOCOL_RODATA_SECTIONS@
 
     /* Move to the next memory page for .data */
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
+
+    .data.boot : {
+        *(.data.boot)
+    } :data
+
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
     .data : {
         *(.data*)
     } :data
 
-    @PROTOCOL_DATA_SECTIONS@
+@PROTOCOL_DATA_SECTIONS@
 
     /* NOTE: .bss needs to be the last thing mapped to :data, otherwise lots of */
     /* unnecessary zeros will be written to the binary. */
@@ -50,7 +62,7 @@ SECTIONS {
     } :data
 
     /* Bootloader protocol specific sections */
-    @PROTOCOL_FINAL_SECTIONS@
+@PROTOCOL_FINAL_SECTIONS@
 
     /* Discard .note.* and .eh_frame* since they may cause issues on some hosts. */
     /DISCARD/ : {
