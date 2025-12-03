@@ -14,8 +14,10 @@ void kboot() {
   }
 
   archEarlyInit();
+  serialPuts("Hello, World! From Kernel!\r\n");
 
   abstractMemmap();
+  serialPuts("Something, something\r\n");
 
   hang();
 }

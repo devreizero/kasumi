@@ -4,4 +4,5 @@
 
 void archEarlyInit() {
     initIDT();
+    serialInitPort(COM1_BASE_PORT, 9600);
 }
