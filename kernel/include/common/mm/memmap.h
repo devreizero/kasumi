@@ -45,8 +45,8 @@ struct MemoryMap {
     size_t entryTotalCount;
 };
 
-void dumpMemmap();
-void abstractMemmap();
+void memmapDump();
+void memmapAbstract();
 
 extern struct MemoryMap memmap;
 

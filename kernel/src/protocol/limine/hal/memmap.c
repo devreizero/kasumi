@@ -36,7 +36,7 @@ static struct MemoryEntries reserved;
 static struct MemoryEntries badmem;
 static struct MemoryEntries unknown;
 
-void abstractMemmap() {
+void memmapAbstract() {
   size_t totalCount = 0;
   size_t usableCount = 0;
   size_t bootloaderReclaimableCount = 0;
