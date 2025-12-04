@@ -17,11 +17,17 @@ SECTIONS {
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    __codeInitSectionEnd = .;
+
     .text : {
         *(.text*)
     } :text
 
+    __codeSectionEnd = .;
+
 @PROTOCOL_TEXT_SECTIONS@
+
+    __textSectionEnd = .;
 
     /* Move to the next memory page for .rodata */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
@@ -41,17 +47,23 @@ SECTIONS {
     /* Move to the next memory page for .data */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    __rodataSectionEnd = .;
+
     .data.init : {
         *(.data.init)
     } :data
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    __dataInitSectionEnd = .;
+
     .data : {
         *(.data*)
     } :data
 
 @PROTOCOL_DATA_SECTIONS@
+
+    __dataSectionEnd = .;
 
     /* NOTE: .bss needs to be the last thing mapped to :data, otherwise lots of */
     /* unnecessary zeros will be written to the binary. */
