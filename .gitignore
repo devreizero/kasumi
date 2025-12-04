@@ -15,3 +15,4 @@ Makefile
 compile_commands.json
 build
 run
+*.log
