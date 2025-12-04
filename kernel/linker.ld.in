@@ -7,11 +7,12 @@ ENTRY(kboot)
 
 SECTIONS {
     . = @LOAD_ADDRESS@;
+    __kernelStart = .;
 
 @PROTOCOL_EARLY_SECTIONS@
 
-    .text.boot : {
-        *(.text.boot)
+    .text.init : {
+        *(.text.init)
     } :text
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
@@ -40,8 +41,8 @@ SECTIONS {
     /* Move to the next memory page for .data */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    .data.boot : {
-        *(.data.boot)
+    .data.init : {
+        *(.data.init)
     } :data
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
@@ -69,4 +70,6 @@ SECTIONS {
         *(.eh_frame*)
         *(.note .note.*)
     }
+
+    __kernelEnd = .;
 }
