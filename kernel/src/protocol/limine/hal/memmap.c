@@ -11,20 +11,20 @@ LIMINE_GET_MEMMAP();
 #define PER_TYPE_ENTRY_COUNT 12
 #define TYPE_COUNT 7
 
-static struct MemoryMapEntry framebufferEntry __bootdata;
-static struct MemoryMapEntry kernelEntry __bootdata;
+static struct MemoryMapEntry framebufferEntry __initdata;
+static struct MemoryMapEntry kernelEntry __initdata;
 
-static struct MemoryMapEntry usableEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
+static struct MemoryMapEntry usableEntries[PER_TYPE_ENTRY_COUNT] __initdata;
 static struct MemoryMapEntry
-    bootloaderReclaimableEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
+    bootloaderReclaimableEntries[PER_TYPE_ENTRY_COUNT] __initdata;
 static struct MemoryMapEntry
-    acpiReclaimableEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
-static struct MemoryMapEntry acpiNvsEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
-static struct MemoryMapEntry acpiTableEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
-static struct MemoryMapEntry mmioEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
-static struct MemoryMapEntry reservedEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
-static struct MemoryMapEntry badmemEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
-static struct MemoryMapEntry unknownEntries[PER_TYPE_ENTRY_COUNT] __bootdata;
+    acpiReclaimableEntries[PER_TYPE_ENTRY_COUNT] __initdata;
+static struct MemoryMapEntry acpiNvsEntries[PER_TYPE_ENTRY_COUNT] __initdata;
+static struct MemoryMapEntry acpiTableEntries[PER_TYPE_ENTRY_COUNT] __initdata;
+static struct MemoryMapEntry mmioEntries[PER_TYPE_ENTRY_COUNT] __initdata;
+static struct MemoryMapEntry reservedEntries[PER_TYPE_ENTRY_COUNT] __initdata;
+static struct MemoryMapEntry badmemEntries[PER_TYPE_ENTRY_COUNT] __initdata;
+static struct MemoryMapEntry unknownEntries[PER_TYPE_ENTRY_COUNT] __initdata;
 
 static struct MemoryEntries usable;
 static struct MemoryEntries bootloaderReclaimable;
@@ -144,6 +144,7 @@ void memmapAbstract() {
   memmap.entryTotalCount = totalCount;
   memmap.kernel = &kernelEntry;
   memmap.framebuffer = &framebufferEntry;
+  memmap.usable = &usable;
   memmap.bootloaderReclaimable = &bootloaderReclaimable;
   memmap.acpiReclaimable = &acpiReclaimable;
   memmap.acpiNvs = &acpiNvs;
