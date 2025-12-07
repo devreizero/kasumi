@@ -16,7 +16,7 @@ PROJECT_ROOT=$(realpath "$KERNEL_ROOT/..")
 BUILD_DIR="$KERNEL_ROOT/build"
 ISO_ROOT="$BUILD_DIR/iso_root"
 
-KERNEL_BIN="$BUILD_DIR/build/build-kernel-${ARCH}-limine"
+KERNEL_BIN="$BUILD_DIR/build/kasumi-${ARCH}-limine.bin"
 LIMINE_BOOT="$PROJECT_ROOT/tools/limine/boot"
 LIMINE_CFG="$PROJECT_ROOT/tools/limine/limine.conf"
 

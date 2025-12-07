@@ -1,87 +1,94 @@
 OUTPUT_FORMAT(@TARGET_OUTPUT_FORMAT@)
 ENTRY(kboot)
 
-/* Generic linker script template */
+/* Memory layout */
+MEMORY
+{
+    LIMINE (rx) : ORIGIN = 0xFFFFFFFF80000000, LENGTH = 4K
+    KERNEL (rx) : ORIGIN = 0xFFFFFFFF80001000, LENGTH = 16M-4K
+}
 
+/* Protocol preamble for bootloader */
 @PROTOCOL_PREAMBLE@
 
-SECTIONS {
+SECTIONS
+{
+    /* Set start of kernel */
     . = @LOAD_ADDRESS@;
     __kernelStart = .;
 
 @PROTOCOL_EARLY_SECTIONS@
 
+    /* .text.init section */
     .text.init : {
-        *(.text.init)
-    } :text
+        __textInitSectionStart = .;
+        KEEP(*(.text.init))
+        __textInitSectionEnd = .;
+    } > KERNEL
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    __codeInitSectionEnd = .;
-
+    /* Main .text section */
     .text : {
-        *(.text*)
-    } :text
-
-    __codeSectionEnd = .;
+        __textSectionStart = .;
+        KEEP(*(.text))
+        KEEP(*(.isr))
+        KEEP(*(.irq))
+        __textSectionEnd = .;
+        PROVIDE(__textSectionEnd = __textSectionEnd);
+    } > KERNEL
 
 @PROTOCOL_TEXT_SECTIONS@
 
-    __textSectionEnd = .;
-
-    /* Move to the next memory page for .rodata */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    /* .rodata section */
     .rodata : {
+        __rodataSectionStart = .;
         *(.rodata*)
-    } :rodata
+        __rodataSectionEnd = .;
+    } > KERNEL
 
-    /* Add a .note.gnu.build-id output section in case a build ID flag is added to the */
-    /* linker command. */
     .note.gnu.build-id : {
         *(.note.gnu.build-id)
-    } :rodata
+    } > KERNEL
 
 @PROTOCOL_RODATA_SECTIONS@
 
-    /* Move to the next memory page for .data */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    __rodataSectionEnd = .;
-
+    /* Initialized .data */
     .data.init : {
+        __dataInitSectionStart = .;
         *(.data.init)
-    } :data
+        __dataInitSectionEnd = .;
+    } > KERNEL
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    __dataInitSectionEnd = .;
-
+    /* Main .data section */
     .data : {
+        __dataSectionStart = .;
         *(.data*)
-    } :data
+        __dataSectionEnd = .;
+    } > KERNEL
 
 @PROTOCOL_DATA_SECTIONS@
 
-    __dataSectionEnd = .;
-
-    /* NOTE: .bss needs to be the last thing mapped to :data, otherwise lots of */
-    /* unnecessary zeros will be written to the binary. */
-    /* If you need, for example, .init_array and .fini_array, those should be placed */
-    /* above this. */
+    /* .bss section */
     .bss : {
         *(.bss*)
         *(COMMON)
-    } :data
+    } > KERNEL
 
-    /* Bootloader protocol specific sections */
 @PROTOCOL_FINAL_SECTIONS@
 
-    /* Discard .note.* and .eh_frame* since they may cause issues on some hosts. */
+    /* Discard unwanted sections */
     /DISCARD/ : {
         *(.eh_frame*)
         *(.note .note.*)
     }
 
+    /* End of kernel */
     __kernelEnd = .;
 }
