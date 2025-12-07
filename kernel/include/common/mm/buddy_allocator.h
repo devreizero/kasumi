@@ -21,6 +21,8 @@ struct FreeBlock {
 struct Buddy {
     struct FreeList freeLists[BUDDY_MAX_ORDER];
     uint8_t *pageOrders;
+    uintptr_t base;
+    size_t length;
     size_t totalPages;
     size_t freePages;
 };
@@ -28,5 +30,6 @@ struct Buddy {
 void *buddyAlloc(struct Zone *zone, size_t order);
 void *buddyAllocAligned(struct Zone *zone, size_t order, size_t align);
 void buddyFree(struct Zone *self, void *vaddr);
+void buddyDump(struct Buddy *b);
 
 #endif

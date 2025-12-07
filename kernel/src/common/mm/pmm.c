@@ -1,14 +1,15 @@
-#include <macros.h>
+#include <assert.h>
 #include <format_string.h>
-#include <serial.h>
+#include <macros.h>
 #include <mm/buddy_allocator.h>
+#include <mm/memmap.h>
 #include <mm/pmm.h>
 #include <mm/vmm.h>
-#include <mm/memmap.h>
 #include <mm/zone.h>
+#include <printf.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <assert.h>
+#include <stdmem.h>
 
 #define THRESHOLD_16MIB 1024 * 1024 * 16L
 #define THRESHOLD_4GIB 1024 * 1024 * 1024 * 4L
@@ -19,253 +20,305 @@ static struct Zone *lastZoneByAddr = NULL;
 static struct Zone *zones;
 static size_t zoneCount;
 
-static void adjustZoneSize(struct Zone *zone, struct Zone *prevZone, size_t threshold, enum ZoneType type);
+static uint8_t pickZoneType(uintptr_t base);
+static struct MemoryMapEntry *findSmallestUsableEntry(size_t need);
+static void initBuddyForZone(struct Zone *z);
+static inline struct Zone *findZoneByType(size_t size, uint8_t type);
+static inline struct Zone *findZoneByAddress(uintptr_t addr);
 
 void pmmInit() {
-    assert(memmap.entryTotalCount > 0);
-    assert(memmap.usable != NULL);
-    assert(memmap.usable->count > 0);
-    
-    serialPuts("[pmm] Initializing Page Allocator\r\n");
+  assert(memmap.usable && memmap.usable->count > 0);
 
-    // Misc Variables
-    char formatBufs[16];
-    uintptr_t buddyAddr;
-    uintptr_t alignedAddr;
-    uint32_t i, j;
-    
-    // Zone Variables
-    const size_t zoneMetadataSize = (memmap.usable->count + 1) * sizeof(struct Zone);
-    struct Zone *zone;
-    struct Zone *prevZone = NULL;
+  printfInfo("pmm: Initializing Page Allocator\n");
 
-    // Buddy Variables
-    size_t buddyMetadataSize[memmap.usable->count];
-    struct Buddy *buddy;
-    struct FreeBlock *freeBlock = NULL;
+  size_t usableCount = memmap.usable->count;
+  struct MemoryMapEntry *usable = memmap.usable->entries;
 
-    // Entry Variables
-    struct MemoryMapEntry *metadataEntry    = NULL;
-    struct MemoryMapEntry *entry            = NULL;
-    struct MemoryMapEntry *usableEntries    = memmap.usable->entries;
-    
-    // First, get ourself some entry that are big enough to fit the metadata
-    for (i = 0; i < memmap.usable->count; i++) {
-        entry = usableEntries + i;
+  /* --- Step 1: Allocate Zone Metadata --- */
+  size_t zoneMetaSize = usableCount * sizeof(struct Zone);
 
-        if (entry->length >= zoneMetadataSize && (metadataEntry == NULL || entry->length < metadataEntry->length)) {
-            metadataEntry = entry;
-        }
+  struct MemoryMapEntry *metaEntry = findSmallestUsableEntry(zoneMetaSize);
+  if (!metaEntry) {
+    printfError("pmm: Unable to reserve %lu bytes for zone metadata\n",
+                zoneMetaSize);
+    hang();
+  }
+
+  uintptr_t metaPhys = __alignup(metaEntry->base, 64);
+  zones = (struct Zone *)hhdmAdd((void *)metaPhys);
+  zoneCount = usableCount;
+
+  /* shrink entry because metadata occupies part of it */
+  size_t consumed = metaPhys - metaEntry->base + zoneMetaSize;
+  metaEntry->base += consumed;
+  metaEntry->length -= consumed;
+
+  /* --- Step 2: Fill zone table --- */
+  for (size_t i = 0; i < usableCount; i++) {
+    zones[i].base = usable[i].base;
+    zones[i].length = usable[i].length;
+    zones[i].type = pickZoneType(zones[i].base);
+
+#ifndef NDEBUG
+    memset(&zones[i].stats, 0, sizeof(struct ZoneStats));
+#endif
+  }
+
+  printfOk("pmm: Zones initialized\n");
+  printfInfo("pmm: Initializing Buddy allocators...\n");
+
+  /* --- Step 3: Build buddy metadata for every zone --- */
+  for (size_t i = 0; i < usableCount; i++) {
+    struct Zone *z = &zones[i];
+
+    size_t metaSize = sizeof(struct Buddy);
+    metaSize += (z->length / PAGE_SIZE); // pageOrders array
+
+    struct MemoryMapEntry *entry = findSmallestUsableEntry(metaSize);
+    if (!entry) {
+      printfError(
+          "pmm: Failed to allocate buddy metadata for zone %lu (%lu bytes)\n",
+          i, metaSize);
+      hang();
     }
 
-    // No entry is big enough to fit the whole zone metadata in one big chunk so, THROW ERROR!
-    if (!metadataEntry) {
-        formatInteger(zoneMetadataSize, formatBufs, sizeof(formatBufs), 0);
-        serialPuts("[pmm] No entry is big enough to fit zone metadata: ");
-        serialPuts(formatBufs);
-        serialPuts(" bytes.\r\n[sys] Aborting.\r\n");
-        hang();
-    }
-    
-    // Align metadata for quicker access
-    alignedAddr             = __alignup(metadataEntry->base, 64);
-    zones                   = (struct Zone *) hhdmAdd((void *) alignedAddr);
-    zoneCount               = memmap.usable->count;
-    metadataEntry->length  -= alignedAddr - metadataEntry->base;
-    metadataEntry->base     = alignedAddr + zoneMetadataSize;
+    uintptr_t phys = __alignup(entry->base, 64);
+    z->buddy = (struct Buddy *)hhdmAdd((void *)phys);
 
-    // Adjust zones range to match threshold better
-    for (i = 0; i < zoneCount; ++i) {
-        zone            = zones + i;
-        zone->base      = usableEntries[i].base;
-        zone->length    = usableEntries[i].length;
+    size_t used = phys - entry->base + metaSize;
+    entry->base += used;
+    entry->length -= used;
 
-        if (zone->base < THRESHOLD_16MIB) {
-            adjustZoneSize(zone, prevZone, THRESHOLD_16MIB, ZONE_DMA | ZONE_DMA32);
-        }
-    #ifdef ARCH_64
-        else if (zone->base < THRESHOLD_4GIB) {
-            adjustZoneSize(zone, prevZone, THRESHOLD_4GIB, ZONE_DMA32 | ZONE_NORMAL);
-        }
-    #else
-        else if (zone->base > THRESHOLD_4GIB) {
-            _setZoneType(zone, prevZone, THRESHOLD_4GIB, ZONE_HIGHMEM | ZONE_NORMAL);
-        }
-    #endif
-        else {
-            zone->type = ZONE_NORMAL;
-        }
+    initBuddyForZone(z);
+  }
 
-        prevZone = zone;
-        buddyMetadataSize[i] = sizeof(struct Buddy) + (zone->length / PAGE_SIZE);
-    }
-
-    serialPuts("[pmm] Initialized Zone-style Page Allocator\r\n");
-    serialPuts("[pmm] Initializing Buddy Allocator\r\n");
-
-    // Initialize each zone's buddy allocator metadata
-    for (i = 0; i < zoneCount; ++i) {
-
-        // If currently used memory entry is too small to fit the metadata, then search for another entry
-        if (metadataEntry->length < buddyMetadataSize[i]) {
-            metadataEntry =  NULL;
-            for (j = 0; j < memmap.usable->count; j++) {
-                entry = usableEntries + j;
-                if (entry->length >= buddyMetadataSize[i] && (metadataEntry == NULL || entry->length < metadataEntry->length)) {
-                    metadataEntry = entry;
-                }
-            }
-        }
-
-        if (metadataEntry == NULL) {
-            formatInteger(i, formatBufs, sizeof(formatBufs), 0);
-            serialPuts("[pmm] No entry is big enough to fit buddy no. ");
-            serialPuts(formatBufs);
-            serialPuts(" metadata:\r\n");
-            
-            formatInteger(buddyMetadataSize[i], formatBufs, sizeof(formatBufs), 0);
-            serialPuts(formatBufs);
-            serialPuts("      bytes.\r\n [sys] Aborting\r\n");
-            hang();
-        }
-        
-                           zone = zones + i;
-                    alignedAddr = __alignup(metadataEntry->base, 64);
-                      buddyAddr = (uintptr_t) hhdmAdd((void *) alignedAddr);
-                    zone->buddy = (struct Buddy *) buddyAddr;
-         metadataEntry->length -= alignedAddr - metadataEntry->base;
-           metadataEntry->base  = alignedAddr + buddyMetadataSize[i];
-
-        buddy                   = zone->buddy;
-        buddy->freePages        =
-        buddy->totalPages       = zone->length / PAGE_SIZE;
-
-        // Nullify the buddy free lists item, no need to init the array itself too since it's statically allocated
-        for (j = 0; j < BUDDY_MAX_ORDER; ++j) {
-            buddy->freeLists[j].count = 0;
-            buddy->freeLists[j].head  = NULL;
-        }
-
-        buddy->pageOrders = (uint8_t *) (buddyAddr + sizeof(struct Buddy));
-        for (j = 0; j < buddy->totalPages; ++j) {
-            buddy->pageOrders[j] = BUDDY_MAX_ORDER - 1;
-        }
-
-        freeBlock = (struct FreeBlock *) hhdmAdd((void *) zone->base);
-        freeBlock->next = NULL;
-        buddy->freeLists[BUDDY_MAX_ORDER - 1].head = freeBlock;
-    }
-
-    serialPuts("[pmm] Initialized Buddy Allocator\r\n");
+  printfOk("pmm: All Buddy allocators initialized.\n");
 }
 
-static void adjustZoneSize(struct Zone *zone, struct Zone *prevZone, size_t threshold, enum ZoneType type) {
-    zone->type = type;
-    if (prevZone == NULL) {
-        return;
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Init Helper
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct MemoryMapEntry *findSmallestUsableEntry(size_t need) {
+  struct MemoryMapEntry *best = NULL;
+
+  for (size_t i = 0; i < memmap.usable->count; i++) {
+    struct MemoryMapEntry *e = &memmap.usable->entries[i];
+    if (e->length >= need) {
+      if (!best || e->length < best->length)
+        best = e;
+    }
+  }
+  return best;
+}
+
+static uint8_t pickZoneType(uintptr_t base) {
+  if (base < 16ULL * 1024 * 1024)
+    return ZONE_DMA | ZONE_DMA32;
+  if (base < 4ULL * 1024 * 1024 * 1024)
+    return ZONE_DMA32 | ZONE_NORMAL;
+  return ZONE_NORMAL; // fallback
+}
+
+static void initBuddyForZone(struct Zone *z) {
+  struct Buddy *b = z->buddy;
+
+  uintptr_t zoneBase = __alignup(z->base, PAGE_SIZE); // make sure it is 4KB aligned
+  uintptr_t zoneEnd = z->base + z->length;
+
+  // calculate buddy's biggest block size
+  size_t maxBlock = (1ULL << (BUDDY_MAX_ORDER + PAGE_SHIFT)); // default = 8 MiB
+
+  // align down zoneEnd to maxBlock boundary
+  uintptr_t alignedEnd = __aligndown(zoneEnd, maxBlock);
+
+  // make sure there is no underflow and isn't forcing to leave the zone
+  if (alignedEnd < zoneBase + maxBlock) {
+    // zone is too small to contain the biggest block,
+    // so we dynamically reduce maxBlock (drop the order)
+    size_t dynamicOrder = BUDDY_MAX_ORDER - 1;
+    maxBlock >>= 1;
+
+    while (dynamicOrder > 0 && alignedEnd < zoneBase + maxBlock) {
+      dynamicOrder--;
+      maxBlock >>= 1;
     }
 
-    size_t range = prevZone->base + prevZone->length;
-    if (range > threshold && range + 1 == zone->base) {
-        uintptr_t diff = (prevZone->base + prevZone->length) - threshold;
-        prevZone->length -= diff;
-        zone->base = 0;
-        zone->length += diff;
+    // still not enough → the zone is really small
+    if (alignedEnd < zoneBase + PAGE_SIZE) {
+      // fallback: not large enough → mark as empty
+      b->base = zoneBase;
+      b->length = 0;
+      b->totalPages = 0;
+      b->freePages = 0;
+
+      memset(b->freeLists, 0, sizeof(b->freeLists));
+      return; // buddy allocator is empty but doesn't crash
     }
+  }
+
+  // now we have a valid buddy range
+  b->base = zoneBase;
+  b->length = alignedEnd - zoneBase;
+
+  b->totalPages = b->length / PAGE_SIZE;
+  b->freePages = b->totalPages;
+
+  // free lists
+  for (size_t i = 0; i < BUDDY_MAX_ORDER; i++) {
+    b->freeLists[i].head = NULL;
+    b->freeLists[i].count = 0;
+  }
+
+  // pageOrders array
+  b->pageOrders = (uint8_t *)((uintptr_t)b + sizeof(struct Buddy));
+  memset(b->pageOrders, BUDDY_MAX_ORDER - 1, b->totalPages);
+
+  // insert one big block (at the buddy base, not at z->base which may not be aligned)
+  struct FreeBlock *blk = (struct FreeBlock *)hhdmAdd((void *)(b->base));
+  blk->next = NULL;
+
+  b->freeLists[BUDDY_MAX_ORDER - 1].head = blk;
+  b->freeLists[BUDDY_MAX_ORDER - 1].count = 1;
 }
+
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Core
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void *pageAllocAligned(enum ZoneType type, size_t pageCount, size_t alignment) {
+  size_t bytes = pageCount * PAGE_SIZE;
+
+  struct Zone *z = findZoneByType(bytes, type);
+  if (!z)
+    return NULL;
+
+  /* convert pageCount → order */
+  size_t order = 0, pages = 1;
+  while (pages < pageCount) {
+    pages <<= 1;
+    order++;
+  }
+
+#ifndef NDEBUG
+  z->stats.allocCount++;
+  z->stats.pagesAllocated += pages;
+  z->stats.lastAllocOrder = order;
+#endif
+
+  void *buddyResult = buddyAllocAligned(z, order, alignment);
+  return buddyResult;
+}
+
+void *pageAlloc(enum ZoneType type, size_t pageCount) {
+  return pageAllocAligned(type, pageCount, PAGE_SIZE);
+}
+
+void pageFree(void *addr) {
+  if (!addr)
+    return;
+
+  uintptr_t a = (uintptr_t)addr;
+  struct Zone *z = findZoneByAddress(a);
+  if (!z)
+    return;
+
+#ifndef NDEBUG
+  z->stats.freeCount++;
+  z->stats.pagesFreed++;
+#endif
+
+  buddyFree(z, addr);
+}
+
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Zone Finder
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static inline struct Zone *findZoneByType(size_t size, uint8_t type) {
-    // Find index bit
-    int bitIndex = __builtin_ctz(type); // get lowest active bit
-    struct Zone *cached = zoneTypeCache[bitIndex];
+    if (type == 0) return NULL;
 
-    // Scenario 1: Cache hit and is valid
-    if (cached && (cached->type & type) && cached->length >= size)
+    /* pages we need */
+    size_t needed_pages = (__alignup(size, PAGE_SIZE) / PAGE_SIZE);
+    if (needed_pages == 0) needed_pages = 1;
+
+    int bitIndex = __builtin_ctz(type); // lowest active bit for cache slot
+    struct Zone *cached = NULL;
+    if (bitIndex >= 0 && bitIndex < ZONE_TYPE_MAX)
+        cached = zoneTypeCache[bitIndex];
+
+    if (cached && (cached->type & type) && cached->length > 0 &&
+        cached->buddy != NULL && cached->buddy->freePages >= needed_pages) {
         return cached;
-
-    // Scenario 2: Cache miss → scan all zone
-    struct Zone *best = NULL;
-    for (size_t i = 0; i < zoneCount; i++) {
-        struct Zone *z = &zones[i];
-        if ((z->type & type) && z->length >= size) {
-            if (!best || z->length < best->length)
-                best = z;
-        }
     }
 
-    // Save zone to cache for faster next allocation
-    if (best)
+    struct Zone *best = NULL;
+
+    for (size_t i = 0; i < zoneCount; ++i) {
+        struct Zone *z = &zones[i];
+        if (!z) continue;
+        // TOOD: Fix Type  --  if (!(z->type & type)) continue;
+        if (z->length == 0) continue;
+        if (!z->buddy) continue;
+        if (z->buddy->freePages < needed_pages) continue;
+
+        if (!best) {
+            best = z;
+            continue;
+        }
+        
+        /* tie-breaker: prefer zone with more free pages (higher chance success) */
+        if (z->buddy->freePages > best->buddy->freePages) {
+            best = z;
+            continue;
+        }
+
+        /* alternate tie-breaker (uncomment to prefer smaller buddy ranges):
+           if (z->buddy->length < best->buddy->length) best = z;
+        */
+    }
+
+    if (best && bitIndex >= 0 && bitIndex < ZONE_TYPE_MAX) {
         zoneTypeCache[bitIndex] = best;
+    }
 
     return best;
 }
 
 static inline struct Zone *findZoneByAddress(uintptr_t addr) {
-    if (lastZoneByAddr &&
-        addr >= lastZoneByAddr->base &&
-        addr < lastZoneByAddr->base + lastZoneByAddr->length)
-        return lastZoneByAddr;
-    
-    size_t low = 0, high = zoneCount - 1;
-    while (low <= high) {
-        size_t mid = (low + high) / 2;
-        struct Zone *z = &zones[mid];
+  if (lastZoneByAddr && addr >= lastZoneByAddr->base &&
+      addr < lastZoneByAddr->base + lastZoneByAddr->length)
+    return lastZoneByAddr;
 
-        if (addr < z->base)
-            high = mid - 1;
-        else if (addr >= z->base + z->length)
-            low = mid + 1;
-        else
-            return z; // Found zone
-    }
-    return NULL;
+  size_t low = 0, high = zoneCount - 1;
+  while (low <= high) {
+    size_t mid = (low + high) / 2;
+    struct Zone *z = &zones[mid];
+
+    if (addr < z->base)
+      high = mid - 1;
+    else if (addr >= z->base + z->length)
+      low = mid + 1;
+    else
+      return z; // Found zone
+  }
+  return NULL;
 }
 
-void *pageAllocAligned(enum ZoneType type, size_t pageCount, size_t alignment) {
-    struct Zone *zone = findZoneByType(pageCount * PAGE_SIZE, type);
-    if (!zone) return NULL;
-
-    size_t order = 0, pages = 1;
-    while (pages < pageCount) { pages <<= 1; ++order; }
-
-    #ifndef NDEBUG
-        zone->stats.allocCount++;
-        zone->stats.pagesAllocated += pages;
-        zone->stats.lastAllocOrder = order;
-    #endif
-
-    return buddyAllocAligned(zone, order, alignment);
-}
-
-void *pageAlloc(enum ZoneType type, size_t pageCount) {
-    return pageAllocAligned(type, pageCount, 0);
-}
-
-void pageFree(void *addr) {
-    struct Zone *zone = findZoneByAddress((uintptr_t) addr);
-    if (!zone) {
-        return;
-    }
-
-    #ifndef NDEBUG
-        zone->stats.freeCount++;
-    #endif
-
-    buddyFree(zone, addr);
-}
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Debugging
+// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef NDEBUG
 void pmmDumpStats(void) {
-    // serialPuts("=== Page Allocator Stats ===\r\n");
-    // for (size_t i = 0; i < zoneCount; i++) {
-    //     struct Zone *z = &zones[i];
-    //     kprintinfo(
-    //         "Zone[%ld]: base=%p, len=%ld, type=0x%02X | alloc=%ld, free=%ld, pages=%ld\n",
-    //         i, (void*)z->base, z->length, z->type,
-    //         z->stats.allocCount, z->stats.freeCount,
-    //         z->stats.pagesAllocated
-    //     );
-    // }
+  printfInfo("=== Page Allocator Stats ===\n");
+  for (size_t i = 0; i < zoneCount; i++) {
+    struct Zone *z = &zones[i];
+    printfInfo("Zone[%lu]: base=0x%lx, len=%lu, type=0x%x | alloc=%lu, "
+               "free=%lu, pages=%lu\n",
+               i, (void *)z->base, z->length, z->type, z->stats.allocCount,
+               z->stats.freeCount, z->stats.pagesAllocated);
+  }
 }
 #else
 void pmmDumpStats(void) {}
