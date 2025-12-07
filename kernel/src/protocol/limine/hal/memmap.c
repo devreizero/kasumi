@@ -1,9 +1,8 @@
-#include "serial.h"
 #include <limine/deploy.h>
 #include <limine/limine.h>
-
 #include <macros.h>
 #include <mm/memmap.h>
+#include <printf.h>
 #include <stddef.h>
 
 LIMINE_GET_MEMMAP();
@@ -51,18 +50,11 @@ void memmapAbstract() {
   struct limine_memmap_entry *entry;
   struct MemoryMapEntry *entryOut;
 
-  serialPuts("start abstracting memmap, looping!\r\n");
+  printfInfo("Start abstracting memmap...\n");
 
   for (size_t i = 0;
        i < res.entry_count && i < (PER_TYPE_ENTRY_COUNT * TYPE_COUNT); i++) {
-    serialPuts("entering entry ");
-    if (i >= 10) {
-      serialPutc('0' + (i / 10));
-      serialPutc('0' + (i % 10));
-    } else {
-      serialPutc('0' + i);
-    }
-    serialPuts("\r\n");
+    printfInfo("Entering entry %lu\n", i);
 
     entry = res.entries[i];
     entryOut = NULL;
@@ -117,10 +109,12 @@ void memmapAbstract() {
     }
 
     if(entryOut) {
-      entryOut->base = entry->base;
+      entryOut->base   = entry->base;
       entryOut->length = entry->length;
     }
   }
+
+  printfInfo("Now setting memmap global variables...\n");
 
   usable.entries = usableEntries;
   usable.count = usableCount;
@@ -153,4 +147,29 @@ void memmapAbstract() {
   memmap.reserved = &reserved;
   memmap.badmem = &badmem;
   memmap.unknown = &unknown;
+
+  printfInfo("Done, memmap is now usable\n");
+}
+
+static void dumpEntries(struct MemoryEntries *entries, const char *name);
+
+void memmapDump() {
+  printfInfo("======= MEMORY MAP DUMP =======\n\n");
+  dumpEntries(memmap.unknown, "Unknown");
+  dumpEntries(memmap.reserved, "Reserved");
+  dumpEntries(memmap.badmem, "Bad");
+  dumpEntries(memmap.acpiNvs, "ACPI NVS");
+  dumpEntries(memmap.acpiTable, "ACPI Table");
+  dumpEntries(memmap.acpiReclaimable, "ACPI Reclaimable");
+  dumpEntries(memmap.bootloaderReclaimable, "Bootloader Reclaimable");
+  dumpEntries(memmap.usable, "Usable");
+}
+
+static void dumpEntries(struct MemoryEntries *entries, const char *name) {
+  printfInfo("%s Memory:\n", name);
+  for (size_t i = 0; i < entries->count; i++) {
+    printfInfo(" - Base=0x%lx  Length=%lu\n", entries->entries[i].base, entries->entries[i].length);
+  }
+
+  printf("\n");
 }

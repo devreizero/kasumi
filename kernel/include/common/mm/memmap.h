@@ -1,3 +1,4 @@
+#pragma once
 #ifndef MEMMAP_H
 #define MEMMAP_H
 
@@ -41,7 +42,7 @@ struct MemoryMap {
     struct MemoryEntries *reserved;
     struct MemoryEntries *badmem;
     struct MemoryEntries *unknown;
-
+    
     size_t entryTotalCount;
 };
 
