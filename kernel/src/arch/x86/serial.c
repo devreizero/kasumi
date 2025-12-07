@@ -42,5 +42,5 @@ void serialPutsn(volatile const char *string, uint16_t n) {
 void serialPutc(volatile char character) {
     // Wait until the Transmitter Holding Register (THR) is empty (THRE bit in LSR).
     while (!((inb(COM1_BASE_PORT + 5)) & 0x20));
-    outb(COM1_BASE_PORT, character); // Write the character to the Data Register (COM1_BASE_PORT).
+    outb(0xe9, character); // Write the character to the Data Register (COM1_BASE_PORT).
 }
