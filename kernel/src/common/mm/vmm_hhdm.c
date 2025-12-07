@@ -9,3 +9,11 @@ __init void *hhdmAdd(void *paddr) {
 __init void *hhdmRemove(void *vaddr) {
     return (void *) ((uintptr_t) vaddr - hhdmOffset);
 }
+
+__init uintptr_t hhdmAddAddr(uintptr_t paddr) {
+    return paddr + hhdmOffset;
+}
+
+__init uintptr_t hhdmRemoveAddr(uintptr_t vaddr) {
+    return vaddr - hhdmOffset;
+}

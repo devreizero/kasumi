@@ -1,8 +1,11 @@
+#include <printf.h>
 #include <arch-hook.h>
 #include <basic-io.h>
+#include <kernel_info.h>
 #include <limine/deploy.h>
 #include <limine/limine.h>
 #include <mm/memmap.h>
+#include <mm/page_allocator.h>
 #include <mm/pmm.h>
 #include <mm/vmm.h>
 #include <serial.h>
@@ -11,6 +14,7 @@
 
 LIMINE_BASE_REF();
 LIMINE_GET_HHDM();
+LIMINE_GET_EXECUTABLE_ADDR();
 
 void kboot() {
   stackAddress = getStackAddress();
@@ -19,17 +23,22 @@ void kboot() {
     hang();
   }
 
-  hhdmOffset = LIMINE_REQ(hhdm).response->offset;
+  hhdmOffset        = LIMINE_REQ(hhdm).response->offset;
+  kernelPhysAddr    = LIMINE_REQ(executableAddress).response->physical_base;
+  kernelVirtAddr    = LIMINE_REQ(executableAddress).response->virtual_base;
 
   archEarlyInit();
-  serialPuts("Hello, World! From Kernel!\r\n");
+  printfOk("Hello, World! From Kernel!\r\n");
 
   memmapAbstract();
-  serialPuts("Something, something\r\n");
+
+  memmapDump();
 
   pmmInit();
+
+  vmmInit();
   
-  serialPuts("PMM end, something\r\n");
+  serialPuts("World End Destruction!!\r\n");
 
   hang();
 }
