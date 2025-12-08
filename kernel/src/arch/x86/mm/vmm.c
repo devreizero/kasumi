@@ -94,6 +94,9 @@ void vmmInit() {
     mapEntry(memmap.kernel);
     mapEntry(memmap.allocator);
     mapEntry(memmap.framebuffer);
+
+    // ALLOCATOR
+    pmmMap();
     
     // KERNEL
     uintptr_t kernelStart = __aligndown((uintptr_t) &__kernelStart, ALIGN_4KB);

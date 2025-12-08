@@ -1,3 +1,4 @@
+#include "mm/kmap.h"
 #include <assert.h>
 #include <format_string.h>
 #include <macros.h>
@@ -26,7 +27,7 @@ static void initBuddyForZone(struct Zone *z);
 static inline struct Zone *findZoneByType(size_t size, uint8_t type);
 static inline struct Zone *findZoneByAddress(uintptr_t addr);
 
-void pmmInit() {
+__init void pmmInit() {
   assert(memmap.usable && memmap.usable->count > 0);
 
   printfInfo("pmm: Initializing Page Allocator\n");
@@ -97,6 +98,37 @@ void pmmInit() {
   }
 
   printfOk("pmm: All Buddy allocators initialized.\n");
+}
+
+__init void pmmMap() {
+  struct Zone *z;
+  struct Buddy *b;
+  uintptr_t zoneAligned, buddyAligned, pageOrdersAligned, previousZoneAlignedAddr = 0;
+  for (size_t i = 0; i < zoneCount; i++) {
+    z = &zones[i];
+    b = z->buddy;
+
+    zoneAligned       = __aligndown((uintptr_t) z, ALIGN_4KB);
+    buddyAligned      = __aligndown((uintptr_t) b, ALIGN_4KB);
+    pageOrdersAligned = __aligndown((uintptr_t) b->pageOrders, ALIGN_4KB);
+    
+    if (zoneAligned != previousZoneAlignedAddr) {
+      kmap(hhdmRemoveAddr((uintptr_t) zoneAligned), (uintptr_t) zoneAligned, SIZE_4KB);    
+    }
+
+    if (buddyAligned != zoneAligned) {
+      kmap(hhdmRemoveAddr((uintptr_t) buddyAligned), (uintptr_t) buddyAligned, SIZE_4KB);
+    }
+
+    if (b->pageOrders) {
+      size_t pageOrdersSize = b->totalPages * sizeof(uint8_t);
+      size_t pagesToMap    = __alignup(pageOrdersSize, PAGE_SIZE) / PAGE_SIZE;
+
+      kmap(hhdmRemoveAddr((uintptr_t) pageOrdersAligned), (uintptr_t) pageOrdersAligned, pagesToMap * SIZE_4KB);
+    }
+
+    previousZoneAlignedAddr = zoneAligned;
+  }
 }
 
 // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -314,7 +346,7 @@ static inline struct Zone *findZoneByAddress(uintptr_t addr) {
 // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef NDEBUG
-void pmmDumpStats(void) {
+void pmmDumpStats(bool dumpBuddy) {
   printfInfo("=== Page Allocator Stats ===\n");
   for (size_t i = 0; i < zoneCount; i++) {
     struct Zone *z = &zones[i];
@@ -322,8 +354,11 @@ void pmmDumpStats(void) {
                "free=%lu, pages=%lu\n",
                i, (void *)z->base, z->length, z->type, z->stats.allocCount,
                z->stats.freeCount, z->stats.pagesAllocated);
+    if (dumpBuddy) {
+      buddyDump(z->buddy);
+    }
   }
 }
 #else
-void pmmDumpStats(void) {}
+void pmmDumpStats(bool dumpBuddy) {}
 #endif

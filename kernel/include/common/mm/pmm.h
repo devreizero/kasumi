@@ -2,7 +2,8 @@
 #ifndef PMM_H
 #define PMM_H
 
-#include <stdint.h>
+#include <macros.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef PAGE_SIZE_2MB
@@ -15,8 +16,10 @@
 
 enum ZoneType;
 
-void pmmInit();
-void pmmDumpStats(void);
+__init void pmmInit();
+__init void pmmMap();
+
+void pmmDumpStats(bool dumpBuddy);
 void *pageAlloc(enum ZoneType type, size_t pageCount); 
 void *pageAllocAligned(enum ZoneType type, size_t pageCount, size_t alignment);
 void pageFree(void *paddr);
