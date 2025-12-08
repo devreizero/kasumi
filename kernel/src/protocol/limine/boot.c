@@ -5,7 +5,7 @@
 #include <limine/deploy.h>
 #include <limine/limine.h>
 #include <mm/memmap.h>
-#include <mm/page_allocator.h>
+#include <mm/hhdm.h>
 #include <mm/pmm.h>
 #include <mm/vmm.h>
 #include <serial.h>
@@ -28,7 +28,7 @@ void kboot() {
   kernelVirtAddr    = LIMINE_REQ(executableAddress).response->virtual_base;
 
   archEarlyInit();
-  printfOk("Hello, World! From Kernel!\r\n");
+  printfOk("Hello, World! From Kernel!\n");
 
   memmapAbstract();
 

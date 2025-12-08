@@ -4,7 +4,7 @@
 #include <mm/buddy_allocator.h>
 #include <mm/memmap.h>
 #include <mm/pmm.h>
-#include <mm/vmm.h>
+#include <mm/hhdm.h>
 #include <mm/zone.h>
 #include <printf.h>
 #include <stddef.h>

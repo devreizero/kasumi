@@ -8,7 +8,7 @@
 #include <macros.h>
 #include <mm/kmap.h>
 #include <mm/pmm.h>
-#include <mm/vmm.h>
+#include <mm/hhdm.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdmem.h>
