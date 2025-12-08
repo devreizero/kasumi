@@ -53,6 +53,10 @@ void pmmInit() {
   metaEntry->base += consumed;
   metaEntry->length -= consumed;
 
+  /* add metadata entry to memmap */
+  memmap.allocator->base = metaEntry->base - consumed;
+  memmap.allocator->length = consumed;
+
   /* --- Step 2: Fill zone table --- */
   for (size_t i = 0; i < usableCount; i++) {
     zones[i].base = usable[i].base;

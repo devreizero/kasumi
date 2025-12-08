@@ -59,6 +59,11 @@ static void mapMemoryMap(struct MemoryEntries *entries) {
     }
 }
 
+static void mapEntry(struct MemoryMapEntry *entry) {
+    uintptr_t alignedStart = __aligndown(entry->base, ALIGN_4KB);
+    kmap(alignedStart, hhdmAddAddr(alignedStart), __alignup(entry->length, ALIGN_4KB));
+}
+
 void vmmInit() {
     uint32_t eax, ebx, ecx, edx;
     cpuid(0x80000008, 0, &eax, &ebx, &ecx, &edx);
@@ -86,6 +91,9 @@ void vmmInit() {
     mapMemoryMap(memmap.acpiNvs);
     mapMemoryMap(memmap.acpiTable);
     mapMemoryMap(memmap.reserved);
+    mapEntry(memmap.kernel);
+    mapEntry(memmap.allocator);
+    mapEntry(memmap.framebuffer);
     
     // KERNEL
     uintptr_t kernelStart = __aligndown((uintptr_t) &__kernelStart, ALIGN_4KB);

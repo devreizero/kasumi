@@ -32,6 +32,7 @@ struct MemoryEntries {
 struct MemoryMap {
     struct MemoryMapEntry *framebuffer;
     struct MemoryMapEntry *kernel;
+    struct MemoryMapEntry *allocator;
 
     struct MemoryEntries *usable;
     struct MemoryEntries *bootloaderReclaimable;

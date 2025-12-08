@@ -12,6 +12,7 @@ LIMINE_GET_MEMMAP();
 
 static struct MemoryMapEntry framebufferEntry __initdata;
 static struct MemoryMapEntry kernelEntry __initdata;
+static struct MemoryMapEntry allocatorEntry __initdata;
 
 static struct MemoryMapEntry usableEntries[PER_TYPE_ENTRY_COUNT] __initdata;
 static struct MemoryMapEntry
@@ -138,6 +139,7 @@ void memmapAbstract() {
   memmap.entryTotalCount = totalCount;
   memmap.kernel = &kernelEntry;
   memmap.framebuffer = &framebufferEntry;
+  memmap.allocator = &allocatorEntry;
   memmap.usable = &usable;
   memmap.bootloaderReclaimable = &bootloaderReclaimable;
   memmap.acpiReclaimable = &acpiReclaimable;
