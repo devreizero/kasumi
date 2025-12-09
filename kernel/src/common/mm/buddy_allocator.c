@@ -24,24 +24,16 @@
 // Helpers to manipulate free lists and pageOrders.
 // Convention: pageOrders[i] = (order & 0x7F) | (allocated ? 0x80 : 0x00)
 
-
-static inline size_t ceil_log2_size_t(size_t v) {
-    size_t r = 0;
-    size_t p = 1;
-    while (p < v) { p <<= 1; ++r; }
-    return r;
-}
-
-static inline uintptr_t buddy_block_phys(struct Buddy *b, size_t pageIndex) {
+static inline uintptr_t buddyBlockPhys(struct Buddy *b, size_t pageIndex) {
     return b->base + (pageIndex * PAGE_SIZE);
 }
 
-static inline size_t phys_to_page_index(struct Buddy *b, uintptr_t phys) {
+static inline size_t physToPageIndex(struct Buddy *b, uintptr_t phys) {
     return (phys - b->base) / PAGE_SIZE;
 }
 
 /* add a free block at given order; phys must be an aligned block base (phys within buddy range) */
-static void add_free_block(struct Buddy *b, size_t order, uintptr_t phys) {
+static void addFreeBlock(struct Buddy *b, size_t order, uintptr_t phys) {
     struct FreeBlock *node = (struct FreeBlock *)hhdmAdd((void *)phys);
     node->next = b->freeLists[order].head;
     b->freeLists[order].head = node;
@@ -49,7 +41,7 @@ static void add_free_block(struct Buddy *b, size_t order, uintptr_t phys) {
 }
 
 /* remove and return head of free list order (0 if none) */
-static uintptr_t pop_free_block_head(struct Buddy *b, size_t order) {
+static uintptr_t popFreeBlockHead(struct Buddy *b, size_t order) {
     struct FreeList *fl = &b->freeLists[order];
     if (!fl->head) return 0;
     struct FreeBlock *node = fl->head;
@@ -66,7 +58,7 @@ static uintptr_t pop_free_block_head(struct Buddy *b, size_t order) {
 }
 
 /* remove arbitrary block phys from free list order; return true if removed */
-static bool remove_free_block(struct Buddy *b, size_t order, uintptr_t phys) {
+static bool removeFreeBlock(struct Buddy *b, size_t order, uintptr_t phys) {
     struct FreeList *fl = &b->freeLists[order];
     struct FreeBlock *prev = NULL;
     struct FreeBlock *cur = fl->head;
@@ -87,7 +79,7 @@ static bool remove_free_block(struct Buddy *b, size_t order, uintptr_t phys) {
 }
 
 /* Set pageOrders for a block starting at pageIndex, for pages = (1<<order) */
-static void set_page_orders(struct Buddy *b, size_t startPageIndex, size_t order) {
+static void setPageOrders(struct Buddy *b, size_t startPageIndex, size_t order) {
     size_t pages = (1ULL << order);
     for (size_t i = 0; i < pages; ++i) {
         assert(startPageIndex + i < b->totalPages);
@@ -126,7 +118,7 @@ void *buddyAllocAligned(struct Zone *zone, size_t order, size_t align) {
     if (k >= BUDDY_MAX_ORDER) return NULL;
 
     /* Pop one block from level k */
-    uintptr_t block_phys = pop_free_block_head(b, k);
+    uintptr_t block_phys = popFreeBlockHead(b, k);
     if (!block_phys) return NULL;
 
     /* split down to requiredOrder */
@@ -135,13 +127,13 @@ void *buddyAllocAligned(struct Zone *zone, size_t order, size_t align) {
         /* sizes: pages_in_k = 1<<k */
         uintptr_t right_phys = block_phys + ((1ULL << k) * PAGE_SIZE);
         /* push right buddy into free list k */
-        add_free_block(b, k, right_phys);
+        addFreeBlock(b, k, right_phys);
 
         /* update pageOrders for both halves */
-        size_t leftPageIndex = phys_to_page_index(b, block_phys);
-        set_page_orders(b, leftPageIndex, k);
-        size_t rightPageIndex = phys_to_page_index(b, right_phys);
-        set_page_orders(b, rightPageIndex, k);
+        size_t leftPageIndex = physToPageIndex(b, block_phys);
+        setPageOrders(b, leftPageIndex, k);
+        size_t rightPageIndex = physToPageIndex(b, right_phys);
+        setPageOrders(b, rightPageIndex, k);
         /* continue with left (block_phys stays same) */
     }
 
@@ -153,16 +145,16 @@ void *buddyAllocAligned(struct Zone *zone, size_t order, size_t align) {
         if ((block_phys & (align - 1)) != 0) {
             // This should not happen normally because we increased requiredOrder,
             // but if it does, free this block and fail gracefully.
-            add_free_block(b, requiredOrder, block_phys);
-            set_page_orders(b, phys_to_page_index(b, block_phys), requiredOrder);
+            addFreeBlock(b, requiredOrder, block_phys);
+            setPageOrders(b, physToPageIndex(b, block_phys), requiredOrder);
             return NULL;
         }
     }
 
     /* mark pages as allocated: set pageOrders for the allocated pages to requiredOrder
        (this is important so free can find order) */
-    size_t allocStartIndex = phys_to_page_index(b, block_phys);
-    set_page_orders(b, allocStartIndex, requiredOrder);
+    size_t allocStartIndex = physToPageIndex(b, block_phys);
+    setPageOrders(b, allocStartIndex, requiredOrder);
 
     /* update counters */
     b->freePages -= (1ULL << requiredOrder);
@@ -181,7 +173,7 @@ void buddyFree(struct Zone *zone, void *vaddr) {
         return;
     }
 
-    size_t pageIndex = phys_to_page_index(b, phys);
+    size_t pageIndex = physToPageIndex(b, phys);
     uint8_t order = b->pageOrders[pageIndex];
     if (order >= BUDDY_MAX_ORDER) {
         // invalid order: ignore
@@ -200,8 +192,8 @@ void buddyFree(struct Zone *zone, void *vaddr) {
         if (b->pageOrders[buddyIndex] != currentOrder) break;
 
         /* buddy looks free at same order -> remove it from free-list */
-        uintptr_t buddyPhys = buddy_block_phys(b, buddyIndex);
-        bool removed = remove_free_block(b, currentOrder, buddyPhys);
+        uintptr_t buddyPhys = buddyBlockPhys(b, buddyIndex);
+        bool removed = removeFreeBlock(b, currentOrder, buddyPhys);
         if (!removed) {
             // couldn't find buddy in free list (so not free) -> stop coalescing
             break;
@@ -214,11 +206,11 @@ void buddyFree(struct Zone *zone, void *vaddr) {
     }
 
     /* Now idx is the start pageIndex of the merged block; currentOrder is the merged order */
-    set_page_orders(b, idx, currentOrder);
+    setPageOrders(b, idx, currentOrder);
 
     /* insert merged block into free list */
-    uintptr_t mergedPhys = buddy_block_phys(b, idx);
-    add_free_block(b, currentOrder, mergedPhys);
+    uintptr_t mergedPhys = buddyBlockPhys(b, idx);
+    addFreeBlock(b, currentOrder, mergedPhys);
     b->freePages += (1ULL << currentOrder);
 }
 
