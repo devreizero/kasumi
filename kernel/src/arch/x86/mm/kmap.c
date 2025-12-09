@@ -1,8 +1,10 @@
-#include <assert.h>
+#include <basic-io.h>
 #include <macros.h>
 #include <mm/hhdm.h>
 #include <mm/kmap.h>
 #include <mm/pmm.h>
+#include <mm/slub.h>
+#include <mm/vmm.h>
 #include <mm/zone.h>
 #include <printf.h>
 #include <stdbool.h>
@@ -57,6 +59,12 @@ void *kmap(uintptr_t paddr, uintptr_t vaddr, size_t size) {
   printfDebug("@@ Mapping paddr 0x%lx until 0x%lx -> vaddr 0x%lx until 0x%lx\n",
               paddr, paddr + size, vaddr, vaddr + size);
 
+  struct VMMNode *conflict = vmmFindNodeOverlapping(vaddr, size);
+  if (conflict) {
+    printfError("conflict when trying to map 0x%lx to 0x%lx\n", paddr, vaddr);
+    return NULL;
+  }
+
   while (remaining > 0) {
     uintptr_t currentPhys = paddr + offset;
     uintptr_t currentVirt = vaddr + offset;
@@ -64,13 +72,13 @@ void *kmap(uintptr_t paddr, uintptr_t vaddr, size_t size) {
     int targetLevel = 0; // default: 4 KB
 
     // Check if 1GB page is possible
-    if ((currentPhys & (SIZE_1GB - 1)) == 0 && (currentVirt & (SIZE_1GB - 1)) == 0 &&
-        remaining >= SIZE_1GB) {
+    if ((currentPhys & (SIZE_1GB - 1)) == 0 &&
+        (currentVirt & (SIZE_1GB - 1)) == 0 && remaining >= SIZE_1GB) {
       targetLevel = 2; // PDPT level = 1GB page
     }
     // Check if 2MB page is possible
-    else if ((currentPhys & (SIZE_2MB - 1)) == 0 && (currentVirt & (SIZE_2MB - 1)) == 0 &&
-             remaining >= SIZE_2MB) {
+    else if ((currentPhys & (SIZE_2MB - 1)) == 0 &&
+             (currentVirt & (SIZE_2MB - 1)) == 0 && remaining >= SIZE_2MB) {
       targetLevel = 1; // PDT level = 2MB page
     }
 
@@ -84,6 +92,21 @@ void *kmap(uintptr_t paddr, uintptr_t vaddr, size_t size) {
     offset += mapped;
     remaining -= mapped;
   }
+
+  struct VMMNode *nodePhys = slubAlloc(sizeof(struct VMMNode));
+  if (!nodePhys) {
+    printfError("Out of memory when trying to map  0x%lx to 0x%lx\n", paddr,
+                vaddr);
+    hang();
+  }
+
+  struct VMMNode *node = hhdmAdd(nodePhys);
+  node->vaddr = vaddr;
+  node->paddr = paddr;
+  node->size = size;
+  node->flags = VM_FIXED_NOREPLACE | VM_KMAP | VM_PERMANENT | VM_EXEC |
+                VM_WRITE | VM_READ;
+  vmmInsert(node);
 
   return (void *)vaddr;
 }
