@@ -1,12 +1,12 @@
-#include "mm/kmap.h"
 #include <assert.h>
-#include <format_string.h>
 #include <macros.h>
 #include <mm/buddy_allocator.h>
+#include <mm/hhdm.h>
+#include <mm/kmap.h>
 #include <mm/memmap.h>
 #include <mm/pmm.h>
-#include <mm/hhdm.h>
 #include <mm/zone.h>
+#include <panic.h>
 #include <printf.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -40,9 +40,7 @@ __init void pmmInit() {
 
   struct MemoryMapEntry *metaEntry = findSmallestUsableEntry(zoneMetaSize);
   if (!metaEntry) {
-    printfError("pmm: Unable to reserve %lu bytes for zone metadata\n",
-                zoneMetaSize);
-    hang();
+    panic("pmm: Unable to reserve %lu bytes for zone metadata\n", zoneMetaSize);
   }
 
   uintptr_t metaPhys = __alignup(metaEntry->base, 64);
@@ -81,10 +79,8 @@ __init void pmmInit() {
 
     struct MemoryMapEntry *entry = findSmallestUsableEntry(metaSize);
     if (!entry) {
-      printfError(
-          "pmm: Failed to allocate buddy metadata for zone %lu (%lu bytes)\n",
-          i, metaSize);
-      hang();
+      panic("pmm: Failed to allocate buddy metadata for zone %lu (%lu bytes)\n",
+            i, metaSize);
     }
 
     uintptr_t phys = __alignup(entry->base, 64);
@@ -103,28 +99,32 @@ __init void pmmInit() {
 __init void pmmMap() {
   struct Zone *z;
   struct Buddy *b;
-  uintptr_t zoneAligned, buddyAligned, pageOrdersAligned, previousZoneAlignedAddr = 0;
+  uintptr_t zoneAligned, buddyAligned, pageOrdersAligned,
+      previousZoneAlignedAddr = 0;
   for (size_t i = 0; i < zoneCount; i++) {
     z = &zones[i];
     b = z->buddy;
 
-    zoneAligned       = __aligndown((uintptr_t) z, ALIGN_4KB);
-    buddyAligned      = __aligndown((uintptr_t) b, ALIGN_4KB);
-    pageOrdersAligned = __aligndown((uintptr_t) b->pageOrders, ALIGN_4KB);
-    
+    zoneAligned = __aligndown((uintptr_t)z, ALIGN_4KB);
+    buddyAligned = __aligndown((uintptr_t)b, ALIGN_4KB);
+    pageOrdersAligned = __aligndown((uintptr_t)b->pageOrders, ALIGN_4KB);
+
     if (zoneAligned != previousZoneAlignedAddr) {
-      kmap(hhdmRemoveAddr((uintptr_t) zoneAligned), (uintptr_t) zoneAligned, SIZE_4KB);    
+      kmap(hhdmRemoveAddr((uintptr_t)zoneAligned), (uintptr_t)zoneAligned,
+           SIZE_4KB);
     }
 
     if (buddyAligned != zoneAligned) {
-      kmap(hhdmRemoveAddr((uintptr_t) buddyAligned), (uintptr_t) buddyAligned, SIZE_4KB);
+      kmap(hhdmRemoveAddr((uintptr_t)buddyAligned), (uintptr_t)buddyAligned,
+           SIZE_4KB);
     }
 
     if (b->pageOrders) {
       size_t pageOrdersSize = b->totalPages * sizeof(uint8_t);
-      size_t pagesToMap    = __alignup(pageOrdersSize, PAGE_SIZE) / PAGE_SIZE;
+      size_t pagesToMap = __alignup(pageOrdersSize, PAGE_SIZE) / PAGE_SIZE;
 
-      kmap(hhdmRemoveAddr((uintptr_t) pageOrdersAligned), (uintptr_t) pageOrdersAligned, pagesToMap * SIZE_4KB);
+      kmap(hhdmRemoveAddr((uintptr_t)pageOrdersAligned),
+           (uintptr_t)pageOrdersAligned, pagesToMap * SIZE_4KB);
     }
 
     previousZoneAlignedAddr = zoneAligned;
@@ -159,7 +159,8 @@ static uint8_t pickZoneType(uintptr_t base) {
 static void initBuddyForZone(struct Zone *z) {
   struct Buddy *b = z->buddy;
 
-  uintptr_t zoneBase = __alignup(z->base, PAGE_SIZE); // make sure it is 4KB aligned
+  uintptr_t zoneBase =
+      __alignup(z->base, PAGE_SIZE); // make sure it is 4KB aligned
   uintptr_t zoneEnd = z->base + z->length;
 
   // calculate buddy's biggest block size
@@ -210,7 +211,8 @@ static void initBuddyForZone(struct Zone *z) {
   b->pageOrders = (uint8_t *)((uintptr_t)b + sizeof(struct Buddy));
   memset(b->pageOrders, BUDDY_MAX_ORDER - 1, b->totalPages);
 
-  // insert one big block (at the buddy base, not at z->base which may not be aligned)
+  // insert one big block (at the buddy base, not at z->base which may not be
+  // aligned)
   struct FreeBlock *blk = (struct FreeBlock *)hhdmAdd((void *)(b->base));
   blk->next = NULL;
 
@@ -272,53 +274,59 @@ void pageFree(void *addr) {
 // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static inline struct Zone *findZoneByType(size_t size, uint8_t type) {
-    if (type == 0) return NULL;
+  if (type == 0)
+    return NULL;
 
-    /* pages we need */
-    size_t needed_pages = (__alignup(size, PAGE_SIZE) / PAGE_SIZE);
-    if (needed_pages == 0) needed_pages = 1;
+  /* pages we need */
+  size_t needed_pages = (__alignup(size, PAGE_SIZE) / PAGE_SIZE);
+  if (needed_pages == 0)
+    needed_pages = 1;
 
-    int bitIndex = __builtin_ctz(type); // lowest active bit for cache slot
-    struct Zone *cached = NULL;
-    if (bitIndex >= 0 && bitIndex < ZONE_TYPE_MAX)
-        cached = zoneTypeCache[bitIndex];
+  int bitIndex = __builtin_ctz(type); // lowest active bit for cache slot
+  struct Zone *cached = NULL;
+  if (bitIndex >= 0 && bitIndex < ZONE_TYPE_MAX)
+    cached = zoneTypeCache[bitIndex];
 
-    if (cached && (cached->type & type) && cached->length > 0 &&
-        cached->buddy != NULL && cached->buddy->freePages >= needed_pages) {
-        return cached;
+  if (cached && (cached->type & type) && cached->length > 0 &&
+      cached->buddy != NULL && cached->buddy->freePages >= needed_pages) {
+    return cached;
+  }
+
+  struct Zone *best = NULL;
+
+  for (size_t i = 0; i < zoneCount; ++i) {
+    struct Zone *z = &zones[i];
+    if (!z)
+      continue;
+    // TOOD: Fix Type  --  if (!(z->type & type)) continue;
+    if (z->length == 0)
+      continue;
+    if (!z->buddy)
+      continue;
+    if (z->buddy->freePages < needed_pages)
+      continue;
+
+    if (!best) {
+      best = z;
+      continue;
     }
 
-    struct Zone *best = NULL;
-
-    for (size_t i = 0; i < zoneCount; ++i) {
-        struct Zone *z = &zones[i];
-        if (!z) continue;
-        // TOOD: Fix Type  --  if (!(z->type & type)) continue;
-        if (z->length == 0) continue;
-        if (!z->buddy) continue;
-        if (z->buddy->freePages < needed_pages) continue;
-
-        if (!best) {
-            best = z;
-            continue;
-        }
-        
-        /* tie-breaker: prefer zone with more free pages (higher chance success) */
-        if (z->buddy->freePages > best->buddy->freePages) {
-            best = z;
-            continue;
-        }
-
-        /* alternate tie-breaker (uncomment to prefer smaller buddy ranges):
-           if (z->buddy->length < best->buddy->length) best = z;
-        */
+    /* tie-breaker: prefer zone with more free pages (higher chance success) */
+    if (z->buddy->freePages > best->buddy->freePages) {
+      best = z;
+      continue;
     }
 
-    if (best && bitIndex >= 0 && bitIndex < ZONE_TYPE_MAX) {
-        zoneTypeCache[bitIndex] = best;
-    }
+    /* alternate tie-breaker (uncomment to prefer smaller buddy ranges):
+       if (z->buddy->length < best->buddy->length) best = z;
+    */
+  }
 
-    return best;
+  if (best && bitIndex >= 0 && bitIndex < ZONE_TYPE_MAX) {
+    zoneTypeCache[bitIndex] = best;
+  }
+
+  return best;
 }
 
 static inline struct Zone *findZoneByAddress(uintptr_t addr) {

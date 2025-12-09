@@ -153,6 +153,15 @@ int vsprintf(char *out, const char *fmt, va_list args) {
   return buf - out;
 }
 
+int fprintf(char *out, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  int len = vsprintf(out, fmt, args);
+  va_end(args);
+
+  return len;
+}
+
 int printf(const char *fmt, ...) {
   char buf[1024];
   va_list args;

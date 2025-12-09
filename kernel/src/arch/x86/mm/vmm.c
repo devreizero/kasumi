@@ -1,5 +1,4 @@
-#include <basic-io.h>
-#include <format_string.h>
+#include <basic_io.h>
 #include <kernel_info.h>
 #include <macros.h>
 #include <mm/hhdm.h>
@@ -8,6 +7,7 @@
 #include <mm/pmm.h>
 #include <mm/vmm.h>
 #include <mm/zone.h>
+#include <panic.h>
 #include <printf.h>
 #include <stack.h>
 #include <stddef.h>
@@ -61,8 +61,7 @@ void vmmInit() {
 
   root = pageAlloc(ZONE_NORMAL, 1);
   if (!root) {
-    printfError("Failed to alloc PML4: 0x%lx\n", root);
-    hang();
+    panic("Failed to alloc PML4: 0x%lx\n", root);
     return;
   }
 

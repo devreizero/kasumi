@@ -1,4 +1,4 @@
-#include <basic-io.h>
+#include <basic_io.h>
 #include <macros.h>
 #include <mm/hhdm.h>
 #include <mm/kmap.h>
@@ -6,6 +6,7 @@
 #include <mm/slub.h>
 #include <mm/vmm.h>
 #include <mm/zone.h>
+#include <panic.h>
 #include <printf.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -95,9 +96,7 @@ void *kmap(uintptr_t paddr, uintptr_t vaddr, size_t size) {
 
   struct VMMNode *nodePhys = slubAlloc(sizeof(struct VMMNode));
   if (!nodePhys) {
-    printfError("Out of memory when trying to map  0x%lx to 0x%lx\n", paddr,
-                vaddr);
-    hang();
+    panic("Out of memory when trying to map  0x%lx to 0x%lx\n", paddr, vaddr);
   }
 
   struct VMMNode *node = hhdmAdd(nodePhys);

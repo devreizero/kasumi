@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <basic-io.h>
+#include <basic_io.h>
 #include <x86/idt.h>
 
 enum IntNo {

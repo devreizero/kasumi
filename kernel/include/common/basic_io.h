@@ -6,7 +6,9 @@
   * Contains basic IO such as hang
   */
 
+#include <macros.h>
+
 // A function that hangs the CPU
-void hang();
+__noreturn void hang();
 
 #endif

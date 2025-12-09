@@ -5,6 +5,7 @@
 #include <stdarg.h>
 
 int vsprintf(char *out, const char *fmt, va_list args);
+int fprintf(char *out, const char *fmt, ...);
 int printf(const char *fmt, ...);
 
 #define printfOk(...) printf("[   OK] " __VA_ARGS__)

@@ -1,4 +1,5 @@
-#include "basic-io.h"
+#include <basic_io.h>
+#include <macros.h>
 
 void hang() {
     for (;;) {
