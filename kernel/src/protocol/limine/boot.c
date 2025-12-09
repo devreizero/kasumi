@@ -7,10 +7,12 @@
 #include <mm/memmap.h>
 #include <mm/hhdm.h>
 #include <mm/pmm.h>
+#include <mm/slub.h>
 #include <mm/vmm.h>
 #include <serial.h>
 #include <stack.h>
 #include <stdbool.h>
+#include <stdmem.h>
 
 LIMINE_BASE_REF();
 LIMINE_GET_HHDM();
@@ -37,6 +39,20 @@ void kboot() {
   pmmInit();
 
   vmmInit();
+
+  slubInit();
+  // pmmDumpStats(true);
+
+  void *paddr = slubAlloc(204);
+  printf("From SLUB=0x%lx\n", paddr);
+
+  void *vaddr = hhdmAdd(paddr);
+  memset(vaddr, 'A', 10);
+  ((char*)vaddr)[10] = 0;
+
+  printf("Value=%s\n", vaddr);
+
+  slubDumpStats();
   
   serialPuts("World End Destruction!!\r\n");
 
